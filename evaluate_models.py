@@ -13,13 +13,124 @@ from sklearn.metrics import (
     auc,
     classification_report
 )
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import learning_curve
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import LinearSVC
 import time
 import os
+
+def plot_learning_curve(estimator, X_train, y_train, X_test, y_test, title):
+    """Vẽ đường cong học tập để phát hiện overfitting hoặc underfitting"""
+    train_sizes = np.linspace(0.1, 1.0, 10)
+    train_sizes, train_scores, validation_scores = learning_curve(
+        estimator, X_train, y_train, train_sizes=train_sizes, cv=5, scoring='accuracy')
+    
+    # Tính điểm trung bình và độ lệch chuẩn
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    validation_mean = np.mean(validation_scores, axis=1)
+    validation_std = np.std(validation_scores, axis=1)
+    
+    # Vẽ đường cong học tập
+    plt.figure(figsize=(10, 6))
+    plt.title(title)
+    plt.xlabel("Số lượng mẫu huấn luyện")
+    plt.ylabel("Độ chính xác")
+    plt.grid()
+    
+    plt.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.1, color="r")
+    plt.fill_between(train_sizes, validation_mean - validation_std, validation_mean + validation_std, alpha=0.1, color="g")
+    plt.plot(train_sizes, train_mean, 'o-', color="r", label="Điểm huấn luyện")
+    plt.plot(train_sizes, validation_mean, 'o-', color="g", label="Điểm xác thực chéo")
+    
+    # Vẽ điểm cho tập test nếu có
+    if X_test is not None and y_test is not None:
+        # Huấn luyện lại mô hình trên toàn bộ tập train
+        estimator.fit(X_train, y_train)
+        test_score = estimator.score(X_test, y_test)
+        plt.axhline(y=test_score, color='b', linestyle='--', 
+                    label=f'Điểm trên tập test ({test_score:.4f})')
+    
+    plt.legend(loc="best")
+    plt.tight_layout()
+    plt.savefig(f'{title.lower().replace(" ", "_")}_learning_curve.png')
+    plt.close()
+    print(f"Đã lưu đường cong học tập vào {title.lower().replace(' ', '_')}_learning_curve.png")
+    
+    # Phân tích dấu hiệu overfitting/underfitting
+    gap = train_mean[-1] - validation_mean[-1]
+    
+    if train_mean[-1] < 0.6:
+        status = "UNDERFITTING: Mô hình có vẻ quá đơn giản, không học được từ dữ liệu."
+    elif gap > 0.1:
+        status = f"OVERFITTING: Mô hình hoạt động tốt trên tập train nhưng kém hơn trên tập validation (chênh lệch {gap:.4f})."
+    else:
+        status = f"PHÙ HỢP: Mô hình có vẻ cân bằng tốt (chênh lệch {gap:.4f})."
+    
+    print(f"Phân tích đường cong học tập: {status}")
+    
+    return {
+        'train_score': train_mean[-1],
+        'validation_score': validation_mean[-1],
+        'gap': gap,
+        'status': status
+    }
+
+def check_overfitting(model, X_train, y_train, X_test, y_test, title):
+    """Kiểm tra overfitting bằng cách so sánh hiệu suất trên tập train và test"""
+    # Huấn luyện mô hình
+    if not hasattr(model, 'fit'):
+        # Nếu model là đối tượng classifier (SpamClassifier/TopicClassifier)
+        model.model.fit(X_train, y_train)
+        train_accuracy = model.model.score(X_train, y_train)
+        test_accuracy = model.model.score(X_test, y_test)
+    else:
+        # Nếu model là scikit-learn model trực tiếp
+        model.fit(X_train, y_train)
+        train_accuracy = model.score(X_train, y_train)
+        test_accuracy = model.score(X_test, y_test)
+    
+    # Tính chênh lệch
+    diff = train_accuracy - test_accuracy
+    
+    print(f"\nKiểm tra Overfitting cho {title}:")
+    print(f"Độ chính xác trên tập train: {train_accuracy:.4f}")
+    print(f"Độ chính xác trên tập test: {test_accuracy:.4f}")
+    print(f"Chênh lệch: {diff:.4f}")
+    
+    # Vẽ biểu đồ so sánh
+    plt.figure(figsize=(8, 6))
+    bars = plt.bar(['Tập train', 'Tập test'], [train_accuracy, test_accuracy], color=['blue', 'orange'])
+    
+    # Thêm giá trị lên đỉnh cột
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.01, f'{height:.4f}', 
+                ha='center', va='bottom', fontsize=12)
+    
+    plt.ylim(0, 1.1)
+    plt.title(f'So sánh hiệu suất trên tập train và test - {title}')
+    plt.ylabel('Độ chính xác')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.savefig(f'{title.lower().replace(" ", "_")}_train_vs_test.png')
+    plt.close()
+    print(f"Đã lưu biểu đồ so sánh vào {title.lower().replace(' ', '_')}_train_vs_test.png")
+    
+    # Đánh giá overfitting
+    if diff > 0.1:
+        status = f"OVERFITTING: Chênh lệch lớn ({diff:.4f}) giữa hiệu suất trên tập train và test."
+    elif diff < 0:
+        status = f"BẤT THƯỜNG: Hiệu suất trên tập test tốt hơn tập train ({diff:.4f})."
+    else:
+        status = f"PHÙ HỢP: Mô hình có hiệu suất tốt và cân bằng trên cả hai tập (chênh lệch {diff:.4f})."
+    
+    print(f"Kết luận: {status}")
+    
+    return {
+        'train_accuracy': train_accuracy,
+        'test_accuracy': test_accuracy,
+        'diff': diff,
+        'status': status
+    }
 
 def evaluate_spam_model():
     """Đánh giá chi tiết mô hình phân loại spam"""
@@ -107,13 +218,13 @@ def evaluate_spam_model():
     plt.close()
     print("Đã lưu đường cong ROC vào spam_roc_curve.png")
     
-    # So sánh với các thuật toán khác
-    print("\nSo sánh với các thuật toán khác...")
-    compare_algorithms(X_train, X_test, y_train, y_test, "Phân loại Spam")
+    # Kiểm tra overfitting
+    print("\nKiểm tra overfitting và underfitting...")
+    check_overfitting(classifier, X_train, y_train, X_test, y_test, "Mô hình Spam")
     
-    # Cross-validation
-    print("\nĐánh giá bằng 5-fold cross-validation...")
-    cross_validate(data_processor.spam_vectorizer, 'spam.csv', 'spam', 'Spam')
+    # Vẽ đường cong học tập
+    print("\nVẽ đường cong học tập...")
+    plot_learning_curve(MultinomialNB(), X_train, y_train, X_test, y_test, "Mô hình Spam")
     
     return acc, precision, recall, f1
 
@@ -183,150 +294,15 @@ def evaluate_topic_model():
     plt.close()
     print("Đã lưu ma trận nhầm lẫn vào topic_confusion_matrix.png")
     
-    # So sánh với các thuật toán khác
-    print("\nSo sánh với các thuật toán khác...")
-    compare_algorithms(X_train, X_test, y_train, y_test, "Phân loại Chủ đề")
+    # Kiểm tra overfitting
+    print("\nKiểm tra overfitting và underfitting...")
+    check_overfitting(classifier, X_train, y_train, X_test, y_test, "Mô hình Chủ đề")
     
-    # Cross-validation
-    print("\nĐánh giá bằng 5-fold cross-validation...")
-    cross_validate(data_processor.topic_vectorizer, 'bbc-text.csv', 'category', 'Chủ đề', is_topic=True)
+    # Vẽ đường cong học tập
+    print("\nVẽ đường cong học tập...")
+    plot_learning_curve(MultinomialNB(), X_train, y_train, X_test, y_test, "Mô hình Chủ đề")
     
     return acc, precision, recall, f1
-
-def compare_algorithms(X_train, X_test, y_train, y_test, task_name):
-    """So sánh hiệu suất của các thuật toán khác nhau"""
-    results = {}
-    
-    # Naive Bayes (hiện tại)
-    print("Đánh giá với Naive Bayes...")
-    nb = MultinomialNB()
-    start_time = time.time()
-    nb.fit(X_train, y_train)
-    y_pred_nb = nb.predict(X_test)
-    end_time = time.time()
-    results['Naive Bayes'] = {
-        'accuracy': accuracy_score(y_test, y_pred_nb),
-        'time': end_time - start_time
-    }
-    
-    # Logistic Regression
-    print("Đánh giá với Logistic Regression...")
-    lr = LogisticRegression(max_iter=1000)
-    start_time = time.time()
-    lr.fit(X_train, y_train)
-    y_pred_lr = lr.predict(X_test)
-    end_time = time.time()
-    results['Logistic Regression'] = {
-        'accuracy': accuracy_score(y_test, y_pred_lr),
-        'time': end_time - start_time
-    }
-    
-    # Random Forest
-    print("Đánh giá với Random Forest...")
-    rf = RandomForestClassifier(n_estimators=100)
-    start_time = time.time()
-    rf.fit(X_train, y_train)
-    y_pred_rf = rf.predict(X_test)
-    end_time = time.time()
-    results['Random Forest'] = {
-        'accuracy': accuracy_score(y_test, y_pred_rf),
-        'time': end_time - start_time
-    }
-    
-    # Linear SVM
-    print("Đánh giá với Linear SVM...")
-    svm = LinearSVC(max_iter=1000)
-    start_time = time.time()
-    svm.fit(X_train, y_train)
-    y_pred_svm = svm.predict(X_test)
-    end_time = time.time()
-    results['Linear SVM'] = {
-        'accuracy': accuracy_score(y_test, y_pred_svm),
-        'time': end_time - start_time
-    }
-    
-    # Hiển thị kết quả
-    print("\nKết quả so sánh các thuật toán:")
-    for name, metrics in results.items():
-        print(f"{name}: độ chính xác = {metrics['accuracy']:.4f}, thời gian = {metrics['time']:.4f}s")
-    
-    # Vẽ biểu đồ so sánh
-    algorithms = list(results.keys())
-    accuracies = [results[algo]['accuracy'] for algo in algorithms]
-    times = [results[algo]['time'] for algo in algorithms]
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-    
-    # Biểu đồ độ chính xác
-    ax1.bar(algorithms, accuracies, color='skyblue')
-    ax1.set_ylim(0, 1)
-    ax1.set_ylabel('Độ chính xác')
-    ax1.set_title(f'So sánh độ chính xác các thuật toán cho {task_name}')
-    
-    # Biểu đồ thời gian
-    ax2.bar(algorithms, times, color='salmon')
-    ax2.set_ylabel('Thời gian huấn luyện và dự đoán (giây)')
-    ax2.set_title(f'So sánh thời gian các thuật toán cho {task_name}')
-    
-    plt.tight_layout()
-    plt.savefig(f'{task_name.lower().replace(" ", "_")}_comparison.png')
-    plt.close()
-    print(f"Đã lưu biểu đồ so sánh vào {task_name.lower().replace(' ', '_')}_comparison.png")
-    
-    return results
-
-def cross_validate(vectorizer, data_file, label_column, task_name, is_topic=False):
-    """Đánh giá mô hình bằng cross-validation"""
-    try:
-        if is_topic:
-            # Tải dữ liệu chủ đề
-            df = pd.read_csv(data_file)
-            # Ánh xạ các danh mục thành nhãn số
-            category_map = {
-                'tech': 0,
-                'business': 1,
-                'entertainment': 2,
-                'sport': 3,
-                'politics': 4
-            }
-            df['category_id'] = df['category'].map(category_map)
-            texts = df['text'].values
-            labels = df['category_id'].values
-        else:
-            # Tải dữ liệu spam
-            df = pd.read_csv(data_file)
-            df['spam'] = df['Category'].apply(lambda x: 1 if x == 'spam' else 0)
-            texts = df['Message'].values
-            labels = df['spam'].values
-        
-        # Chuyển đổi văn bản
-        X = vectorizer.transform(texts)
-        
-        # K-fold cross validation
-        kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        model = MultinomialNB()
-        
-        # Đánh giá bằng cross-validation
-        cv_scores = cross_val_score(model, X, labels, cv=kf, scoring='accuracy')
-        
-        print(f"Kết quả 5-fold Cross Validation cho mô hình {task_name}:")
-        print(f"Các điểm số: {[f'{score:.4f}' for score in cv_scores]}")
-        print(f"Điểm trung bình: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
-        
-        # Vẽ biểu đồ
-        plt.figure(figsize=(8, 6))
-        plt.boxplot(cv_scores, vert=False, patch_artist=True)
-        plt.axvline(x=cv_scores.mean(), color='red', linestyle='--', label=f'Trung bình ({cv_scores.mean():.4f})')
-        plt.xlabel('Độ chính xác')
-        plt.title(f'5-fold Cross Validation cho mô hình {task_name}')
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.legend()
-        plt.savefig(f'{task_name.lower().replace(" ", "_")}_cross_validation.png')
-        plt.close()
-        print(f"Đã lưu biểu đồ cross-validation vào {task_name.lower().replace(' ', '_')}_cross_validation.png")
-        
-    except Exception as e:
-        print(f"Lỗi khi thực hiện cross-validation: {str(e)}")
 
 def evaluate_with_examples():
     """Đánh giá mô hình với một số ví dụ cụ thể"""

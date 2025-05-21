@@ -1,11 +1,13 @@
-from sklearn.naive_bayes import MultinomialNB
+# from sklearn.naive_bayes import MultinomialNB
+from custom_naive_bayes import CustomMultinomialNB
 from sklearn.metrics import classification_report
 import joblib
 import os
 
 class TopicClassifier:
     def __init__(self):
-        self.model = MultinomialNB()
+        # self.model = MultinomialNB()
+        self.model = CustomMultinomialNB(alpha=1.0)
         self.topics = ['tech', 'business', 'entertainment', 'sport', 'politics']
         
     def train(self, X_train, y_train):
