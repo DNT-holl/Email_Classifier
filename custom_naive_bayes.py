@@ -187,6 +187,22 @@ class CustomMultinomialNB:
         jll = self._joint_log_likelihood(X)
         return self.classes_[np.argmax(jll, axis=1)]
     
+    def score(self, X, y):
+        """
+        Trả về độ chính xác trung bình trên dữ liệu X, y
+        
+        Tham số:
+        X : array-like hoặc sparse matrix, shape (n_samples, n_features)
+            Dữ liệu vector đặc trưng
+        y : array-like, shape (n_samples,)
+            Nhãn thực tế
+            
+        Trả về:
+        score : float
+            Độ chính xác trung bình
+        """
+        return np.mean(self.predict(X) == y)
+    
     def _joint_log_likelihood(self, X):
         """Tính log của xác suất đồng thời P(x, y)"""
         X = self._check_X(X)
