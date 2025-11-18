@@ -1,8 +1,15 @@
+# -*- coding: utf-8 -*-
 # from sklearn.naive_bayes import MultinomialNB
 from custom_naive_bayes import CustomMultinomialNB
 from sklearn.metrics import classification_report
 import joblib
 import os
+import sys
+import io
+
+# Thiết lập encoding UTF-8 cho output
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 class SpamClassifier:
     def __init__(self):

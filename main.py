@@ -1,7 +1,16 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+import os
+
+# Thiết lập encoding UTF-8 cho output
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 from data_processor import DataProcessor
 from spam_classifier import SpamClassifier
 from topic_classifier import TopicClassifier
-import os
 import re
 import joblib
 
